@@ -1,0 +1,856 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Audi R8 LMS — 3D Showcase</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #03030a;
+    color: #fff;
+    font-family: 'Inter', sans-serif;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+  }
+
+  /* Canvas wrapper — filter goes here so WebGL context is unaffected */
+  #canvas-wrapper {
+    position: fixed; inset: 0; z-index: 0;
+    filter: contrast(1.09) saturate(1.12) sepia(0.045);
+    transition: filter 0.6s ease;
+  }
+  #canvas { display: block; width: 100%; height: 100%; }
+
+  /* Ambient glow overlay */
+  #glow {
+    position: fixed; inset: 0; pointer-events: none; z-index: 1;
+    background: radial-gradient(ellipse at 50% 72%, rgba(99,102,241,0.13) 0%, transparent 62%);
+    transition: background 1.2s;
+  }
+
+  /* Key light rays from top-right */
+  #light-rays {
+    position: fixed; inset: 0; pointer-events: none; z-index: 2;
+    background:
+      radial-gradient(ellipse at 74% -2%, rgba(255,238,185,0.10) 0%, transparent 42%),
+      radial-gradient(ellipse at 74% -2%, rgba(255,222,140,0.055) 0%, transparent 66%);
+    transition: background 1.2s, opacity 1.2s;
+  }
+
+  /* Vignette */
+  #vignette {
+    position: fixed; inset: 0; pointer-events: none; z-index: 6;
+    background: radial-gradient(ellipse at 50% 48%, transparent 42%, rgba(0,0,0,0.72) 100%);
+  }
+
+  /* Film grain canvas */
+  #grain {
+    position: fixed; inset: 0;
+    width: 100%; height: 100%;
+    pointer-events: none; z-index: 7;
+    opacity: 0.038;
+    mix-blend-mode: overlay;
+  }
+
+  /* Speed lines overlay */
+  #speedlines {
+    position: fixed; inset: 0; pointer-events: none; z-index: 3;
+    opacity: 0; transition: opacity 0.3s;
+    background: radial-gradient(ellipse at 50% 50%, transparent 30%, rgba(0,0,0,0.18) 100%);
+  }
+
+  /* Loader */
+  #loader {
+    position: fixed; inset: 0; background: #03030a;
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 20px; z-index: 100;
+    transition: opacity 0.8s;
+  }
+  #loader.hidden { opacity: 0; pointer-events: none; }
+
+  .loader-car { font-size: 40px; animation: drive 1s ease-in-out infinite alternate; }
+  @keyframes drive {
+    from { transform: translateX(-10px) rotate(-2deg); }
+    to   { transform: translateX(10px) rotate(2deg); }
+  }
+
+  .loader-bar-bg {
+    width: 200px; height: 2px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 2px; overflow: hidden;
+  }
+  .loader-bar {
+    height: 100%; width: 0%;
+    background: linear-gradient(90deg, #6366f1, #a78bfa);
+    border-radius: 2px; transition: width 0.3s;
+  }
+  .loader-text {
+    font-size: 11px; letter-spacing: 0.25em;
+    text-transform: uppercase; color: rgba(255,255,255,0.28);
+  }
+
+  /* UI */
+  #ui { position: fixed; inset: 0; z-index: 10; pointer-events: none; }
+
+  /* Top */
+  #topbar {
+    display: flex; align-items: center;
+    justify-content: space-between; padding: 30px 40px;
+  }
+
+  .brand {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 15px; font-weight: 700;
+    letter-spacing: 0.15em; text-transform: uppercase;
+    color: rgba(255,255,255,0.88);
+  }
+  .brand em { color: #6366f1; font-style: normal; }
+
+  .nav-pills { display: flex; gap: 6px; pointer-events: all; }
+  .pill {
+    font-size: 11px; font-weight: 500;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    padding: 7px 18px; border-radius: 100px;
+    border: 1px solid rgba(255,255,255,0.09);
+    background: rgba(255,255,255,0.03);
+    color: rgba(255,255,255,0.38);
+    cursor: pointer; transition: all 0.25s;
+    backdrop-filter: blur(8px);
+  }
+  .pill:hover, .pill.active {
+    background: rgba(99,102,241,0.22);
+    border-color: rgba(99,102,241,0.52);
+    color: #fff;
+  }
+
+  /* Center hint */
+  #hint {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center; transition: opacity 0.6s;
+  }
+  #hint.hidden { opacity: 0; pointer-events: none; }
+  .hint-icon { font-size: 28px; margin-bottom: 8px; animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:0.5;transform:scale(1)} 50%{opacity:1;transform:scale(1.1)} }
+  .hint-text { font-size: 12px; color: rgba(255,255,255,0.28); letter-spacing: 0.1em; }
+
+  /* Bottom left — car info */
+  #car-info { position: absolute; bottom: 40px; left: 40px; max-width: 420px; }
+
+  .car-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 10px; font-weight: 600; letter-spacing: 0.22em;
+    text-transform: uppercase; color: #6366f1; margin-bottom: 14px;
+  }
+  .car-badge::before { content: ''; width: 24px; height: 1px; background: #6366f1; }
+
+  .car-name {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: clamp(30px, 4.2vw, 52px);
+    font-weight: 700; letter-spacing: -0.03em;
+    line-height: 0.96; margin-bottom: 10px;
+  }
+
+  .car-sub {
+    font-size: 13px; color: rgba(255,255,255,0.38);
+    letter-spacing: 0.05em; margin-bottom: 28px;
+  }
+
+  .car-specs { display: flex; gap: 0; margin-bottom: 24px; align-items: flex-start; }
+
+  .spec-item { padding: 0 22px; border-right: 1px solid rgba(255,255,255,0.09); }
+  .spec-item:first-child { padding-left: 0; }
+  .spec-item:last-child { border-right: none; }
+
+  .spec-val {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 30px; font-weight: 700;
+    color: #fff; line-height: 1; letter-spacing: -0.02em;
+  }
+  .spec-unit { font-size: 13px; color: rgba(255,255,255,0.38); font-weight: 400; letter-spacing: 0; }
+  .spec-label {
+    font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: rgba(255,255,255,0.28); margin-top: 5px;
+  }
+
+  .car-actions { display: flex; gap: 8px; pointer-events: all; }
+
+  .btn {
+    padding: 11px 24px; border-radius: 8px;
+    font-family: 'Inter', sans-serif;
+    font-size: 12px; font-weight: 500;
+    cursor: pointer; transition: all 0.22s;
+    border: none; outline: none; letter-spacing: 0.06em;
+  }
+  .btn-outline {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.13);
+    color: rgba(255,255,255,0.55);
+    backdrop-filter: blur(8px);
+  }
+  .btn-outline:hover { border-color: rgba(255,255,255,0.35); color: #fff; }
+  .btn-primary { background: linear-gradient(135deg, #6366f1 0%, #7c3aed 100%); color: #fff; }
+  .btn-primary:hover {
+    background: linear-gradient(135deg, #5254d4 0%, #6d28d9 100%);
+    box-shadow: 0 10px 30px rgba(99,102,241,0.5);
+    transform: translateY(-1px);
+  }
+
+  /* Bottom right — controls */
+  #controls-panel {
+    position: absolute; bottom: 40px; right: 40px;
+    text-align: right; pointer-events: all;
+  }
+
+  .section-label {
+    font-size: 9px; letter-spacing: 0.24em;
+    text-transform: uppercase; color: rgba(255,255,255,0.25);
+    margin-bottom: 12px;
+  }
+
+  .swatches {
+    display: flex; gap: 10px;
+    justify-content: flex-end; margin-bottom: 22px; align-items: center;
+    flex-wrap: wrap; max-width: 240px;
+  }
+
+  .swatch {
+    width: 30px; height: 30px; border-radius: 50%;
+    cursor: pointer; border: 2px solid transparent;
+    transition: all 0.22s; position: relative;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+  }
+  .swatch.active { border-color: rgba(255,255,255,0.85); transform: scale(1.22); box-shadow: 0 4px 16px rgba(0,0,0,0.6); }
+  .swatch:hover:not(.active) { transform: scale(1.12); }
+
+  .view-btns { display: flex; gap: 7px; justify-content: flex-end; margin-bottom: 12px; }
+
+  .view-btn {
+    width: 38px; height: 38px; border-radius: 9px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.09);
+    color: rgba(255,255,255,0.45);
+    font-size: 14px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.22s; pointer-events: all;
+    backdrop-filter: blur(8px);
+  }
+  .view-btn:hover { background: rgba(99,102,241,0.2); border-color: rgba(99,102,241,0.45); color: #fff; }
+  .view-btn.active { background: rgba(99,102,241,0.3); border-color: #6366f1; color: #fff; }
+
+  /* Right-side speed stat during auto-rotate */
+  #speed-stat {
+    position: fixed; top: 50%; right: 52px;
+    transform: translateY(-50%);
+    text-align: right; pointer-events: none; z-index: 15;
+    opacity: 0; transition: opacity 0.5s;
+  }
+  #speed-stat.visible { opacity: 1; }
+  .speed-num {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 76px; font-weight: 700;
+    line-height: 1; color: rgba(255,255,255,0.07); letter-spacing: -0.04em;
+  }
+  .speed-label {
+    font-size: 10px; letter-spacing: 0.25em;
+    text-transform: uppercase; color: rgba(255,255,255,0.13);
+  }
+</style>
+</head>
+<body>
+
+<div id="loader">
+  <div class="loader-car">🏎️</div>
+  <div class="loader-bar-bg"><div class="loader-bar" id="progress-bar"></div></div>
+  <div class="loader-text" id="loader-text">Loading model</div>
+</div>
+
+<div id="glow"></div>
+
+<!-- Canvas wrapper: CSS filter lives here, not on the canvas, so WebGL context is safe -->
+<div id="canvas-wrapper">
+  <canvas id="canvas"></canvas>
+</div>
+
+<div id="light-rays"></div>
+<div id="speedlines"></div>
+
+<!-- Film grain overlay (300×200 canvas, CSS-stretched) -->
+<canvas id="grain" width="300" height="200"></canvas>
+
+<!-- Vignette (on top of grain so it darkens edges cleanly) -->
+<div id="vignette"></div>
+
+<div id="speed-stat">
+  <div class="speed-num">570</div>
+  <div class="speed-label">Horsepower</div>
+</div>
+
+<div id="ui">
+  <div id="topbar">
+    <div class="brand">three<em>.</em>studio</div>
+    <div class="nav-pills">
+      <div class="pill active" id="pill-exterior">Exterior</div>
+      <div class="pill" id="pill-detail">Detail</div>
+      <div class="pill" id="pill-low">Low Angle</div>
+    </div>
+  </div>
+
+  <div id="hint">
+    <div class="hint-icon">🖱️</div>
+    <div class="hint-text">Drag to rotate &nbsp;·&nbsp; Scroll to zoom</div>
+  </div>
+
+  <div id="car-info">
+    <div class="car-badge">2016 Race Spec</div>
+    <div class="car-name">Audi R8<br>LMS</div>
+    <div class="car-sub">GT3 · 5.2L V10 · Rear-Wheel Drive</div>
+    <div class="car-specs">
+      <div class="spec-item">
+        <div class="spec-val">570<span class="spec-unit">hp</span></div>
+        <div class="spec-label">Power</div>
+      </div>
+      <div class="spec-item">
+        <div class="spec-val">1.230<span class="spec-unit">kg</span></div>
+        <div class="spec-label">Weight</div>
+      </div>
+      <div class="spec-item">
+        <div class="spec-val">3.2<span class="spec-unit">s</span></div>
+        <div class="spec-label">0–100</div>
+      </div>
+      <div class="spec-item">
+        <div class="spec-val">300<span class="spec-unit">+</span></div>
+        <div class="spec-label">km/h</div>
+      </div>
+    </div>
+    <div class="car-actions">
+      <button class="btn btn-outline" id="reset-btn">↺ Reset</button>
+      <button class="btn btn-primary" id="auto-btn">▶ Auto Rotate</button>
+    </div>
+  </div>
+
+  <div id="controls-panel">
+    <div class="section-label">Environment</div>
+    <div class="swatches" id="env-swatches">
+      <div class="swatch active" style="background:linear-gradient(135deg,#1a1a2e,#6366f1)" data-env="studio"  title="Studio"></div>
+      <div class="swatch"        style="background:linear-gradient(135deg,#0f2027,#203a43,#2c5364)" data-env="night"   title="Night"></div>
+      <div class="swatch"        style="background:linear-gradient(135deg,#f0c27f,#3a1c71)" data-env="sunset"  title="Sunset"></div>
+      <div class="swatch"        style="background:linear-gradient(135deg,#e0e0e0,#bdbdbd)" data-env="day"     title="Showroom"></div>
+      <div class="swatch"        style="background:linear-gradient(135deg,#3a0000,#cc0000)" data-env="race"    title="Race Mode"></div>
+      <div class="swatch"        style="background:linear-gradient(135deg,#111,#444)"       data-env="noir"    title="Noir"></div>
+      <div class="swatch"        style="background:linear-gradient(135deg,#0a0015,#ff00cc)" data-env="neon"    title="Neon"></div>
+      <div class="swatch"        style="background:linear-gradient(135deg,#050810,#1a2233)" data-env="carbon"  title="Carbon"></div>
+    </div>
+    <div class="section-label">View</div>
+    <div class="view-btns">
+      <div class="view-btn" id="wireframe-btn" title="Wireframe">⬡</div>
+      <div class="view-btn" id="fullscreen-btn" title="Fullscreen">⛶</div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+<script>
+// ─── Renderer ─────────────────────────────────────────────────────────────
+const canvas        = document.getElementById('canvas');
+const canvasWrapper = document.getElementById('canvas-wrapper');
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.35;
+renderer.setClearColor(0x03030a);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(0x03030a, 7, 38);
+
+const camera = new THREE.PerspectiveCamera(35, window.innerWidth / window.innerHeight, 0.01, 200);
+camera.position.set(4, 1.6, 8);
+
+// ─── Lighting ────────────────────────────────────────────────────────────
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.35);
+scene.add(ambientLight);
+
+const keyLight = new THREE.DirectionalLight(0xfff0d8, 5.5);
+keyLight.position.set(9, 15, 5);
+keyLight.castShadow = true;
+keyLight.shadow.mapSize.width  = 4096;
+keyLight.shadow.mapSize.height = 4096;
+keyLight.shadow.camera.near   = 0.5;
+keyLight.shadow.camera.far    = 50;
+keyLight.shadow.camera.left   = -9;
+keyLight.shadow.camera.right  = 9;
+keyLight.shadow.camera.top    = 9;
+keyLight.shadow.camera.bottom = -9;
+keyLight.shadow.bias   = -0.001;
+keyLight.shadow.radius = 2;
+scene.add(keyLight);
+
+const rimLight = new THREE.DirectionalLight(0x2277ff, 3.8);
+rimLight.position.set(-2, 5, -12);
+scene.add(rimLight);
+
+const fillLight = new THREE.DirectionalLight(0x8899cc, 0.9);
+fillLight.position.set(-8, 4, -2);
+scene.add(fillLight);
+
+const underLight = new THREE.PointLight(0xff9955, 0.6, 8);
+underLight.position.set(0, -0.5, 0);
+scene.add(underLight);
+
+const groundLight = new THREE.HemisphereLight(0x5566aa, 0x03030a, 0.55);
+scene.add(groundLight);
+
+const carSpot = new THREE.SpotLight(0xffffff, 2.5, 18, Math.PI / 6.5, 0.4);
+carSpot.position.set(0, 9, 0);
+carSpot.castShadow = true;
+scene.add(carSpot);
+
+// NEON point lights — added/removed by env switch
+const neonLightPink   = new THREE.PointLight(0xff0088, 0, 10);
+const neonLightCyan   = new THREE.PointLight(0x00ffcc, 0, 10);
+const neonLightPurple = new THREE.PointLight(0x9900ff, 0, 10);
+neonLightPink.position.set(-4, 2, 4);
+neonLightCyan.position.set(4, 3, -4);
+neonLightPurple.position.set(0, 5, 6);
+scene.add(neonLightPink, neonLightCyan, neonLightPurple);
+
+// ─── Floor ───────────────────────────────────────────────────────────────
+const floorMat = new THREE.MeshStandardMaterial({ color: 0x06060f, roughness: 0.75, metalness: 0.25 });
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(30, 30), floorMat);
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = -0.01;
+floor.receiveShadow = true;
+scene.add(floor);
+
+const reflMat = new THREE.MeshStandardMaterial({
+  color: 0x080816, roughness: 0.018, metalness: 0.96, transparent: true, opacity: 0.58
+});
+const refl = new THREE.Mesh(new THREE.PlaneGeometry(18, 18), reflMat);
+refl.rotation.x = -Math.PI / 2;
+refl.position.y = 0.001;
+scene.add(refl);
+
+// Standard grid (all envs except neon)
+const gridHelper = new THREE.GridHelper(22, 22, 0x0c0c1c, 0x09091a);
+gridHelper.position.y = 0.002;
+gridHelper.material.transparent = true;
+gridHelper.material.opacity = 0.5;
+scene.add(gridHelper);
+
+// Neon grid (neon env only)
+const neonGrid = new THREE.GridHelper(22, 22, 0xff00cc, 0x00ffcc);
+neonGrid.position.y = 0.0025;
+neonGrid.material.transparent = true;
+neonGrid.material.opacity = 0.55;
+neonGrid.visible = false;
+scene.add(neonGrid);
+
+// GLOW HALO
+const glowCircleMat = new THREE.MeshBasicMaterial({
+  color: 0x6366f1, transparent: true, opacity: 0.10,
+  side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending
+});
+const glowCircle = new THREE.Mesh(new THREE.CircleGeometry(3.8, 64), glowCircleMat);
+glowCircle.rotation.x = -Math.PI / 2;
+glowCircle.position.y = 0.003;
+scene.add(glowCircle);
+
+const glowRingMat = new THREE.MeshBasicMaterial({
+  color: 0x5558cc, transparent: true, opacity: 0.04,
+  side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending
+});
+const glowRing = new THREE.Mesh(new THREE.CircleGeometry(6.5, 64), glowRingMat);
+glowRing.rotation.x = -Math.PI / 2;
+glowRing.position.y = 0.002;
+scene.add(glowRing);
+
+// ─── Particles ───────────────────────────────────────────────────────────
+const pCount = 280;
+const pGeo = new THREE.BufferGeometry();
+const pPos = new Float32Array(pCount * 3);
+for (let i = 0; i < pCount; i++) {
+  pPos[i*3]   = (Math.random()-0.5)*26;
+  pPos[i*3+1] = Math.random()*9;
+  pPos[i*3+2] = (Math.random()-0.5)*26;
+}
+pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+scene.add(new THREE.Points(pGeo, new THREE.PointsMaterial({
+  color: 0x6366f1, size: 0.035,
+  transparent: true, opacity: 0.28,
+  blending: THREE.AdditiveBlending, depthWrite: false
+})));
+
+// ─── Load GLB ─────────────────────────────────────────────────────────────
+let carModel    = null;
+let wireframeOn = false;
+let explodeOn   = false;
+const allMaterials  = [];
+const explodeMeshes = []; // { mesh, origPos, targetPos }
+
+function loadGLB() {
+  updateLoader('Fetching model...', 20);
+
+  const loader = new THREE.GLTFLoader();
+  loader.load(
+    'ac_-_audi_r8_lms_2016_free.glb',
+    (gltf) => {
+      updateLoader('Building meshes...', 80);
+
+      const group = gltf.scene;
+
+      group.traverse((node) => {
+        if (!node.isMesh) return;
+        node.castShadow    = true;
+        node.receiveShadow = true;
+        const mats = Array.isArray(node.material) ? node.material : [node.material];
+        mats.forEach(m => allMaterials.push(m));
+
+        // Store original local position for explode
+        explodeMeshes.push({
+          mesh:      node,
+          origPos:   node.position.clone(),
+          targetPos: node.position.clone()
+        });
+      });
+
+      // Centre and scale
+      const box    = new THREE.Box3().setFromObject(group);
+      const centre = box.getCenter(new THREE.Vector3());
+      const maxDim = Math.max(...box.getSize(new THREE.Vector3()).toArray());
+      const scale  = 4.5 / maxDim;
+
+      group.scale.setScalar(scale);
+      const scaledBox = new THREE.Box3().setFromObject(group);
+      group.position.set(-centre.x * scale, -scaledBox.min.y + 0.01, -centre.z * scale);
+
+      scene.add(group);
+      carModel = group;
+
+      updateLoader('Ready!', 100);
+      setTimeout(() => {
+        document.getElementById('loader').classList.add('hidden');
+        document.getElementById('hint').style.opacity = '1';
+      }, 600);
+    },
+    (xhr) => {
+      if (xhr.total) updateLoader(`Loading... ${Math.round((xhr.loaded / xhr.total) * 70) + 10}%`,
+                                   Math.round((xhr.loaded / xhr.total) * 70) + 10);
+    },
+    (err) => {
+      console.error('GLTFLoader error:', err);
+      updateLoader('Using placeholder model', 80);
+      loadFallback();
+    }
+  );
+}
+
+function loadFallback() {
+  const group    = new THREE.Group();
+  const mat      = new THREE.MeshStandardMaterial({ color: 0x6366f1, metalness: 0.8, roughness: 0.2 });
+  const darkMat  = new THREE.MeshStandardMaterial({ color: 0x111122, metalness: 0.9, roughness: 0.1 });
+  const glassMat = new THREE.MeshStandardMaterial({ color: 0x4488ff, transparent: true, opacity: 0.3, metalness: 0.1, roughness: 0.05 });
+
+  const body  = new THREE.Mesh(new THREE.BoxGeometry(3.8, 0.6, 1.6), mat);
+  body.castShadow = true; group.add(body);
+  const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.55, 1.4), mat);
+  cabin.position.set(-0.1, 0.55, 0); cabin.castShadow = true; group.add(cabin);
+  const glass = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.45, 1.3), glassMat);
+  glass.position.set(-0.1, 0.56, 0); group.add(glass);
+  [-1.4, 1.4].forEach(x => [-0.9, 0.9].forEach(z => {
+    const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.38, 0.3, 24), darkMat);
+    wheel.rotation.z = Math.PI / 2;
+    wheel.position.set(x, -0.22, z);
+    wheel.castShadow = true; group.add(wheel);
+  }));
+  const spoiler = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.08, 0.4), mat);
+  spoiler.position.set(-1.7, 0.5, 0); group.add(spoiler);
+
+  group.position.y = 0.4;
+  scene.add(group);
+  carModel = group;
+  allMaterials.push(mat, darkMat);
+  setTimeout(() => document.getElementById('loader').classList.add('hidden'), 500);
+}
+
+function updateLoader(text, pct) {
+  document.getElementById('loader-text').textContent = text;
+  document.getElementById('progress-bar').style.width = pct + '%';
+}
+
+// ─── Film Grain ──────────────────────────────────────────────────────────
+const grainCanvas = document.getElementById('grain');
+const grainCtx    = grainCanvas.getContext('2d');
+function updateGrain() {
+  const w = grainCanvas.width, h = grainCanvas.height;
+  const img = grainCtx.createImageData(w, h);
+  const d   = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const v = (Math.random() * 255) | 0;
+    d[i] = d[i+1] = d[i+2] = v; d[i+3] = 255;
+  }
+  grainCtx.putImageData(img, 0, 0);
+}
+updateGrain();
+setInterval(updateGrain, 110);
+
+// ─── Orbit Controls ───────────────────────────────────────────────────────
+let isDragging = false;
+let prevMouse  = { x: 0, y: 0 };
+let spherical  = { theta: 0.48, phi: 1.36, radius: 8 };
+let targetS    = { ...spherical };
+let autoRotate = false;
+
+function onDragStart(x, y) {
+  isDragging = true;
+  prevMouse  = { x, y };
+  document.getElementById('hint').classList.add('hidden');
+}
+
+function onDragMove(x, y) {
+  if (!isDragging) return;
+  // FIX: subtract dy so dragging DOWN moves camera DOWN (higher phi = lower angle)
+  targetS.theta -= (x - prevMouse.x) * 0.007;
+  targetS.phi    = Math.max(0.2, Math.min(1.52, targetS.phi - (y - prevMouse.y) * 0.007));
+  prevMouse = { x, y };
+}
+
+canvas.addEventListener('mousedown', e => onDragStart(e.clientX, e.clientY));
+window.addEventListener('mouseup',   () => isDragging = false);
+window.addEventListener('mousemove', e => onDragMove(e.clientX, e.clientY));
+canvas.addEventListener('wheel', e => {
+  targetS.radius = Math.max(2, Math.min(16, targetS.radius + e.deltaY * 0.012));
+  document.getElementById('hint').classList.add('hidden');
+}, { passive: true });
+
+let prevPinch = null;
+canvas.addEventListener('touchstart', e => {
+  if (e.touches.length === 1) onDragStart(e.touches[0].clientX, e.touches[0].clientY);
+  document.getElementById('hint').classList.add('hidden');
+});
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (e.touches.length === 1) onDragMove(e.touches[0].clientX, e.touches[0].clientY);
+  if (e.touches.length === 2) {
+    const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX,
+                         e.touches[0].clientY - e.touches[1].clientY);
+    if (prevPinch) targetS.radius = Math.max(2, Math.min(16, targetS.radius - (d - prevPinch) * 0.02));
+    prevPinch = d;
+  }
+}, { passive: false });
+canvas.addEventListener('touchend', () => { isDragging = false; prevPinch = null; });
+
+// ─── Camera presets ───────────────────────────────────────────────────────
+const presets = {
+  exterior: { theta: 0.48, phi: 1.36, radius: 8 },
+  detail:   { theta: 0.30, phi: 0.80, radius: 3.5 },
+  low:      { theta: 0.48, phi: 1.50, radius: 7 }
+};
+
+document.getElementById('pill-exterior').addEventListener('click', () => setPreset('exterior', 'pill-exterior'));
+document.getElementById('pill-detail').addEventListener('click',   () => setPreset('detail',   'pill-detail'));
+document.getElementById('pill-low').addEventListener('click',      () => setPreset('low',       'pill-low'));
+
+function setPreset(name, id) {
+  targetS = { ...presets[name] };
+  document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+// ─── Environment presets ─────────────────────────────────────────────────
+const envs = {
+  studio: {
+    bg: 0x03030a, ambient: 0.35, key: 0xfff0d8, keyInt: 5.5,
+    exposure: 1.35,
+    fog: 0x03030a,
+    glow: 'rgba(99,102,241,0.13)',
+    rays: 'rgba(255,238,185,0.10)',
+    filter: 'contrast(1.09) saturate(1.12) sepia(0.045)',
+    neon: false
+  },
+  night: {
+    bg: 0x010309, ambient: 0.18, key: 0x4466ff, keyInt: 2.5,
+    exposure: 1.2,
+    fog: 0x010309,
+    glow: 'rgba(56,100,200,0.16)',
+    rays: 'rgba(120,160,255,0.08)',
+    filter: 'contrast(1.06) saturate(1.05) brightness(0.95)',
+    neon: false
+  },
+  sunset: {
+    bg: 0x120704, ambient: 0.55, key: 0xff8844, keyInt: 5.5,
+    exposure: 1.4,
+    fog: 0x120704,
+    glow: 'rgba(255,120,50,0.16)',
+    rays: 'rgba(255,180,80,0.12)',
+    filter: 'contrast(1.08) saturate(1.25) sepia(0.08)',
+    neon: false
+  },
+  day: {
+    bg: 0x181818, ambient: 1.10, key: 0xffffff, keyInt: 5.0,
+    exposure: 1.3,
+    fog: 0x181818,
+    glow: 'rgba(220,220,220,0.07)',
+    rays: 'rgba(255,255,240,0.07)',
+    filter: 'contrast(1.05) saturate(1.0) brightness(1.05)',
+    neon: false
+  },
+  race: {
+    bg: 0x0a0000, ambient: 0.2, key: 0xff4422, keyInt: 7.0,
+    exposure: 1.8,
+    fog: 0x0a0000,
+    glow: 'rgba(200,30,10,0.18)',
+    rays: 'rgba(255,80,40,0.14)',
+    filter: 'contrast(1.15) saturate(1.3) brightness(1.05)',
+    neon: false
+  },
+  noir: {
+    bg: 0x060606, ambient: 0.1, key: 0xffffff, keyInt: 8.0,
+    exposure: 1.1,
+    fog: 0x060606,
+    glow: 'rgba(255,255,255,0.04)',
+    rays: 'rgba(255,255,255,0.06)',
+    filter: 'grayscale(1) contrast(1.2) brightness(0.95)',
+    neon: false
+  },
+  neon: {
+    bg: 0x02000a, ambient: 0.08, key: 0xff00cc, keyInt: 2.0,
+    exposure: 1.1,
+    fog: 0x02000a,
+    glow: 'rgba(255,0,200,0.14)',
+    rays: 'rgba(0,255,200,0.08)',
+    filter: 'saturate(1.8) brightness(1.1) contrast(1.05)',
+    neon: true
+  },
+  carbon: {
+    bg: 0x030508, ambient: 0.25, key: 0x99bbff, keyInt: 4.5,
+    exposure: 1.0,
+    fog: 0x030508,
+    glow: 'rgba(50,80,160,0.12)',
+    rays: 'rgba(80,120,255,0.07)',
+    filter: 'brightness(0.9) contrast(1.1) hue-rotate(200deg)',
+    neon: false
+  }
+};
+
+document.querySelectorAll('#env-swatches .swatch').forEach(s => {
+  s.addEventListener('click', () => {
+    document.querySelectorAll('#env-swatches .swatch').forEach(x => x.classList.remove('active'));
+    s.classList.add('active');
+
+    const env = envs[s.dataset.env];
+
+    renderer.setClearColor(env.bg);
+    renderer.toneMappingExposure = env.exposure;
+    scene.fog.color.setHex(env.fog);
+    ambientLight.intensity = env.ambient;
+    keyLight.color.setHex(env.key);
+    keyLight.intensity = env.keyInt;
+
+    canvasWrapper.style.filter = env.filter;
+
+    document.getElementById('glow').style.background =
+      `radial-gradient(ellipse at 50% 72%, ${env.glow} 0%, transparent 62%)`;
+    document.getElementById('light-rays').style.background =
+      `radial-gradient(ellipse at 74% -2%, ${env.rays} 0%, transparent 45%)`;
+
+    // Neon lights on/off
+    const neonIntensity = env.neon ? 3.0 : 0;
+    neonLightPink.intensity   = neonIntensity;
+    neonLightCyan.intensity   = neonIntensity;
+    neonLightPurple.intensity = neonIntensity;
+
+    // Swap grids
+    gridHelper.visible = !env.neon;
+    neonGrid.visible   =  env.neon;
+  });
+});
+
+
+// ─── Wireframe ───────────────────────────────────────────────────────────
+document.getElementById('wireframe-btn').addEventListener('click', function() {
+  wireframeOn = !wireframeOn;
+  this.classList.toggle('active', wireframeOn);
+  allMaterials.forEach(m => m.wireframe = wireframeOn);
+});
+
+// ─── Auto rotate ─────────────────────────────────────────────────────────
+document.getElementById('auto-btn').addEventListener('click', function() {
+  autoRotate = !autoRotate;
+  this.textContent = autoRotate ? '⏸ Pause' : '▶ Auto Rotate';
+  document.getElementById('speed-stat').classList.toggle('visible', autoRotate);
+});
+
+document.getElementById('reset-btn').addEventListener('click', () => {
+  targetS = { ...presets.exterior };
+});
+
+// ─── Fullscreen ──────────────────────────────────────────────────────────
+document.getElementById('fullscreen-btn').addEventListener('click', () => {
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
+  else document.exitFullscreen?.();
+});
+
+// ─── Render loop ─────────────────────────────────────────────────────────
+const clock = new THREE.Clock();
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function animate() {
+  requestAnimationFrame(animate);
+  const delta   = clock.getDelta();
+  const elapsed = clock.getElapsedTime();
+
+  // Smooth camera
+  spherical.theta  = lerp(spherical.theta,  targetS.theta,  0.055);
+  spherical.phi    = lerp(spherical.phi,    targetS.phi,    0.055);
+  spherical.radius = lerp(spherical.radius, targetS.radius, 0.055);
+
+  if (autoRotate && !isDragging) targetS.theta += delta * 0.14;
+
+  const sp = Math.sin(spherical.phi);
+  const cp = Math.cos(spherical.phi);
+  camera.position.x = spherical.radius * sp * Math.sin(spherical.theta);
+  camera.position.y = spherical.radius * cp + 0.3;
+  camera.position.z = spherical.radius * sp * Math.cos(spherical.theta);
+  camera.position.y += Math.sin(elapsed * 0.42) * 0.028;
+  camera.lookAt(0, 0.75 + Math.sin(elapsed * 0.42) * 0.012, 0);
+
+  // Car float
+  if (carModel) carModel.position.y = Math.sin(elapsed * 0.55) * 0.035;
+
+  // Explode lerp — smooth each mesh toward its target position
+  if (explodeMeshes.length > 0) {
+    explodeMeshes.forEach(item => {
+      item.mesh.position.lerp(item.targetPos, 0.06);
+    });
+  }
+
+  // Glow pulse
+  glowCircleMat.opacity = 0.09 + Math.sin(elapsed * 1.1) * 0.022;
+  glowRingMat.opacity   = 0.035 + Math.sin(elapsed * 1.1 + Math.PI) * 0.012;
+
+  renderer.render(scene, camera);
+}
+
+// ─── Resize ──────────────────────────────────────────────────────────────
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ─── Start ───────────────────────────────────────────────────────────────
+loadGLB();
+animate();
+</script>
+</body>
+</html>
