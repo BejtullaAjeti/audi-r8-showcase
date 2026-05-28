@@ -24,7 +24,7 @@
     filter: contrast(1.09) saturate(1.12) sepia(0.045);
     transition: filter 0.6s ease;
   }
-  #canvas { display: block; width: 100%; height: 100%; }
+  #canvas { display: block; width: 100%; height: 100%; touch-action: none; }
 
   /* Ambient glow overlay */
   #glow {
@@ -259,6 +259,90 @@
   .speed-label {
     font-size: 10px; letter-spacing: 0.25em;
     text-transform: uppercase; color: rgba(255,255,255,0.13);
+  }
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     RESPONSIVE — tablet
+     ───────────────────────────────────────────────────────────────────────── */
+  @media (max-width: 768px) {
+    #topbar { padding: 22px 28px; }
+    #car-info { bottom: 28px; left: 28px; max-width: 340px; }
+    #controls-panel { bottom: 28px; right: 28px; }
+    .car-name { font-size: clamp(26px, 4vw, 40px); }
+    .spec-val { font-size: 24px; }
+    .view-btn { width: 44px; height: 44px; }
+    .swatch { width: 32px; height: 32px; }
+  }
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     RESPONSIVE — mobile portrait  (≤ 480px, e.g. iPhone 14 = 390px)
+     ───────────────────────────────────────────────────────────────────────── */
+  @media (max-width: 480px) {
+    /* Topbar */
+    #topbar { padding: 14px 18px; gap: 8px; }
+    .brand { font-size: 13px; }
+    .pill { font-size: 10px; padding: 5px 11px; }
+    .nav-pills { gap: 5px; }
+
+    /* Hint */
+    .hint-icon { font-size: 22px; }
+    .hint-text { font-size: 11px; }
+
+    /* Car info — bottom-left, dark backing so text reads over 3D */
+    #car-info {
+      bottom: 14px; left: 14px;
+      max-width: calc(54vw);
+      border-radius: 12px;
+      padding: 12px 14px;
+    }
+    .car-badge { font-size: 9px; margin-bottom: 6px; }
+    .car-badge::before { width: 16px; }
+    .car-name { font-size: clamp(20px, 5vw, 28px); margin-bottom: 6px; line-height: 1; }
+    .car-sub { display: none; }           /* not enough room on mobile */
+    .car-specs { gap: 0; margin-bottom: 12px; }
+    .spec-item { padding: 0 10px; }
+    .spec-item:first-child { padding-left: 0; }
+    .spec-val { font-size: clamp(16px, 4vw, 22px); }
+    .spec-unit { font-size: 10px; }
+    .spec-label { font-size: 7px; margin-top: 3px; }
+    .car-actions { gap: 6px; }
+    .btn { padding: 10px 14px; font-size: 11px; min-height: 44px; }
+
+    /* Controls panel — bottom-right, same dark backing */
+    #controls-panel {
+      bottom: 14px; right: 14px;
+      text-align: right;
+      border-radius: 12px;
+      padding: 12px 14px;
+    }
+    .section-label { font-size: 8px; margin-bottom: 8px; }
+    .swatches { gap: 8px; margin-bottom: 14px; max-width: 160px; }
+    .swatch { width: 32px; height: 32px; }   /* larger for fat-finger tapping */
+    .view-btns { gap: 6px; margin-bottom: 0; }
+    .view-btn { width: 44px; height: 44px; font-size: 15px; border-radius: 10px; }
+
+    /* Speed stat — hide on mobile (no room) */
+    #speed-stat { display: none; }
+  }
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     RESPONSIVE — small phones (≤ 380px, e.g. SE, Galaxy A)
+     ───────────────────────────────────────────────────────────────────────── */
+  @media (max-width: 380px) {
+    /* Hide nav pills — too cramped at this width */
+    .nav-pills { display: none; }
+    #topbar { padding: 12px 16px; }
+
+    #car-info { bottom: 12px; left: 12px; max-width: calc(52vw); padding: 10px 12px; }
+    .car-name { font-size: 19px; }
+    .spec-val { font-size: 16px; }
+    .spec-item { padding: 0 8px; }
+
+    #controls-panel { bottom: 12px; right: 12px; padding: 10px 12px; }
+    .swatch { width: 28px; height: 28px; }
+    .swatches { gap: 6px; max-width: 140px; }
+    .view-btn { width: 40px; height: 40px; }
+    .btn { padding: 9px 12px; font-size: 10px; min-height: 40px; }
   }
 </style>
 </head>
@@ -610,6 +694,10 @@ let spherical  = { theta: 0.48, phi: 1.36, radius: 8 };
 let targetS    = { ...spherical };
 let autoRotate = false;
 
+// Slightly higher sensitivity on mobile — smaller screen = fewer pixels per gesture
+const isMobile       = window.innerWidth <= 768;
+const dragSensitivity = isMobile ? 0.010 : 0.007;
+
 function onDragStart(x, y) {
   isDragging = true;
   prevMouse  = { x, y };
@@ -619,8 +707,8 @@ function onDragStart(x, y) {
 function onDragMove(x, y) {
   if (!isDragging) return;
   // FIX: subtract dy so dragging DOWN moves camera DOWN (higher phi = lower angle)
-  targetS.theta -= (x - prevMouse.x) * 0.007;
-  targetS.phi    = Math.max(0.2, Math.min(1.52, targetS.phi - (y - prevMouse.y) * 0.007));
+  targetS.theta -= (x - prevMouse.x) * dragSensitivity;
+  targetS.phi    = Math.max(0.2, Math.min(1.52, targetS.phi - (y - prevMouse.y) * dragSensitivity));
   prevMouse = { x, y };
 }
 
@@ -847,6 +935,15 @@ window.addEventListener('resize', () => {
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
+
+// ─── Mobile UX ───────────────────────────────────────────────────────────
+if (isMobile) {
+  // Touch-friendly hint text
+  document.querySelector('.hint-icon').textContent = '👆';
+  document.querySelector('.hint-text').innerHTML   = 'Drag to rotate &nbsp;·&nbsp; Pinch to zoom';
+  // Auto-hide hint after 3 s so it doesn't block the 3D scene
+  setTimeout(() => document.getElementById('hint').classList.add('hidden'), 3000);
+}
 
 // ─── Start ───────────────────────────────────────────────────────────────
 loadGLB();
